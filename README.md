@@ -22,7 +22,7 @@ service installation, and acceptance. The supported installation flow targets
 macOS. Codex's setup-time browser/computer access does not automatically grant
 those same tools to the unattended agent runtime.
 
-## Configuration and credentials
+## Credentials and state
 
 Start from [the example configuration](config/director.example.json). The setup
 agent writes an ignored `config/director-<name>.local.json` for your Slack
