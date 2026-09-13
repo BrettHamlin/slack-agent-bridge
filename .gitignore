@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+.venv/
+node_modules/
+__pycache__/
+*.pyc
+state/
+*.sqlite*
+*.log
+
+# Per-machine identity, paths and routing configuration
+config/*.local.json

@@ -1,0 +1,292 @@
+{
+  "version": 1,
+  "scenarios": [
+    {
+      "id": "A01",
+      "title": "Ordinary conversation replies without task cards",
+      "file": "scenarios/A01-ordinary-reply.md",
+      "mode": "computer",
+      "tier": "smoke",
+      "dependencies": []
+    },
+    {
+      "id": "A02",
+      "title": "An explicit assignment needing input creates an attention card",
+      "file": "scenarios/A02-waiting-card.md",
+      "mode": "computer",
+      "tier": "smoke",
+      "dependencies": []
+    },
+    {
+      "id": "A03",
+      "title": "Open conversation navigates without authorizing work",
+      "file": "scenarios/A03-open-conversation.md",
+      "mode": "computer",
+      "tier": "smoke",
+      "dependencies": [
+        "A02"
+      ]
+    },
+    {
+      "id": "A04",
+      "title": "Later defers and resurfaces the same responsibility",
+      "file": "scenarios/A04-later-resurface.md",
+      "mode": "computer",
+      "tier": "full",
+      "dependencies": [
+        "A03"
+      ]
+    },
+    {
+      "id": "A05",
+      "title": "Drop cancels and prevents further work",
+      "file": "scenarios/A05-drop.md",
+      "mode": "computer",
+      "tier": "smoke",
+      "dependencies": [
+        "A03"
+      ]
+    },
+    {
+      "id": "A06",
+      "title": "Answering the question completes the same task",
+      "file": "scenarios/A06-continuation-completion.md",
+      "mode": "computer",
+      "tier": "full",
+      "dependencies": []
+    },
+    {
+      "id": "A07",
+      "title": "Continuation in a new conversation preserves context",
+      "file": "scenarios/A07-cross-thread.md",
+      "mode": "computer",
+      "tier": "full",
+      "dependencies": []
+    },
+    {
+      "id": "A08",
+      "title": "A missing waiting-input card is repaired",
+      "file": "scenarios/A08-card-repair.md",
+      "mode": "controlled",
+      "tier": "full",
+      "dependencies": []
+    },
+    {
+      "id": "A09",
+      "title": "A failed harmless command gets a visible answer",
+      "file": "scenarios/A09-command-failure.md",
+      "mode": "computer",
+      "tier": "smoke",
+      "dependencies": []
+    },
+    {
+      "id": "A10",
+      "title": "Completed work stays completed across receiver restart",
+      "file": "scenarios/A10-restart.md",
+      "mode": "controlled",
+      "tier": "full",
+      "dependencies": [
+        "A01",
+        "A09"
+      ]
+    },
+    {
+      "id": "A11",
+      "title": "Messages sent during a receiver outage are recovered",
+      "file": "scenarios/A11-outage-recovery.md",
+      "mode": "controlled",
+      "tier": "full",
+      "dependencies": []
+    },
+    {
+      "id": "A12",
+      "title": "Concurrent conversations keep their replies separate",
+      "file": "scenarios/A12-concurrency.md",
+      "mode": "computer",
+      "tier": "full",
+      "dependencies": []
+    },
+    {
+      "id": "A13",
+      "title": "Edited and deleted messages do not execute stale instructions",
+      "file": "scenarios/A13-source-changes.md",
+      "mode": "isolated",
+      "tier": "full",
+      "dependencies": []
+    },
+    {
+      "id": "A14",
+      "title": "A scheduled reminder arrives once in the correct thread",
+      "file": "scenarios/A14-reminder.md",
+      "mode": "computer",
+      "tier": "full",
+      "dependencies": []
+    },
+    {
+      "id": "A15",
+      "title": "Denied cleanup signals do not hang or duplicate workers",
+      "file": "scenarios/A15-cleanup-faults.md",
+      "mode": "isolated",
+      "tier": "full",
+      "dependencies": []
+    },
+    {
+      "id": "A16",
+      "title": "Later, Drop, and stale claims fence publication",
+      "file": "scenarios/A16-stale-controls.md",
+      "mode": "isolated",
+      "tier": "full",
+      "dependencies": []
+    },
+    {
+      "id": "A17",
+      "title": "Waiting and idle periods remain quiet",
+      "file": "scenarios/A17-quiet-waiting.md",
+      "mode": "computer",
+      "tier": "full",
+      "dependencies": []
+    },
+    {
+      "id": "A18",
+      "title": "Runtime startup and transport respect credential boundaries",
+      "file": "scenarios/A18-credentials.md",
+      "mode": "isolated",
+      "tier": "full",
+      "dependencies": []
+    },
+    {
+      "id": "A19",
+      "title": "Uncertain delivery and failure notices survive retries",
+      "file": "scenarios/A19-outgoing-retries.md",
+      "mode": "isolated",
+      "tier": "full",
+      "dependencies": []
+    },
+    {
+      "id": "A20",
+      "title": "ACP conversations retain context and remain isolated",
+      "file": "scenarios/A20-acp-continuity.md",
+      "mode": "computer",
+      "tier": "smoke",
+      "dependencies": []
+    },
+    {
+      "id": "A21",
+      "title": "Legacy sessions and completed work survive ACP migration and restart",
+      "file": "scenarios/A21-acp-migration.md",
+      "mode": "controlled",
+      "tier": "full",
+      "dependencies": [
+        "A20"
+      ]
+    },
+    {
+      "id": "A22",
+      "title": "Gateway failures preserve ownership and verified delivery",
+      "file": "scenarios/A22-gateway-faults.md",
+      "mode": "isolated",
+      "tier": "full",
+      "dependencies": []
+    },
+    {
+      "id": "A23",
+      "title": "ACP retains model, tools and approval behavior",
+      "file": "scenarios/A23-acp-capabilities.md",
+      "mode": "computer",
+      "tier": "full",
+      "dependencies": [
+        "A20"
+      ]
+    },
+    {
+      "id": "A24",
+      "title": "Durable intake acknowledges independently of the agent",
+      "file": "scenarios/A24-receiver-ack.md",
+      "mode": "computer",
+      "tier": "full",
+      "dependencies": [
+        "A01"
+      ]
+    },
+    {
+      "id": "A25",
+      "title": "Prepared source and one reply operation eliminate setup round trips",
+      "file": "scenarios/A25-prepared-publish.md",
+      "mode": "computer",
+      "tier": "full",
+      "dependencies": [
+        "A01",
+        "A09",
+        "A20"
+      ]
+    },
+    {
+      "id": "A26",
+      "title": "Conversation feed keeps one useful card per session",
+      "file": "scenarios/A26-conversation-feed.md",
+      "mode": "computer",
+      "tier": "smoke",
+      "dependencies": []
+    },
+    {
+      "id": "A27",
+      "title": "Feed removal and restart preserve source conversations",
+      "file": "scenarios/A27-feed-recovery.md",
+      "mode": "controlled",
+      "tier": "full",
+      "dependencies": [
+        "A26"
+      ]
+    },
+    {
+      "id": "A28",
+      "title": "Feed uncertain mutations preserve order and ownership",
+      "file": "scenarios/A28-feed-faults.md",
+      "mode": "isolated",
+      "tier": "full",
+      "dependencies": []
+    },
+    {
+      "id": "A29",
+      "title": "One-use native Guardian approval preserves automatic review",
+      "file": "scenarios/A29-guardian-one-use-approval.md",
+      "mode": "controlled",
+      "tier": "full",
+      "dependencies": [
+        "A20",
+        "A23",
+        "A25"
+      ]
+    },
+    {
+      "id": "A30",
+      "title": "Approval feed card approves one exact denied reply",
+      "file": "scenarios/A30-guardian-approval-feed.md",
+      "mode": "controlled",
+      "tier": "full",
+      "dependencies": [
+        "A20",
+        "A26"
+      ]
+    },
+    {
+      "id": "A31",
+      "title": "Complexity selection preserves harness and conversation continuity",
+      "file": "scenarios/A31-model-selection.md",
+      "mode": "controlled",
+      "tier": "full",
+      "dependencies": [
+        "A20",
+        "A25"
+      ]
+    },
+    {
+      "id": "A32",
+      "title": "A new standalone installation remains isolated and resumable",
+      "file": "scenarios/A32-portable-installation.md",
+      "mode": "controlled",
+      "tier": "full",
+      "dependencies": []
+    }
+  ]
+}
