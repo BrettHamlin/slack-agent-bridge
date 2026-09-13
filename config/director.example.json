@@ -1,0 +1,35 @@
+{
+  "team_id": "T_REPLACE_WITH_WORKSPACE_ID",
+  "channel_id": "C_REPLACE_WITH_PRIVATE_SOURCE_CHANNEL_ID",
+  "channel_name": "director-work-tests",
+  "environment": "development",
+  "owner_user_id": "U_REPLACE_WITH_OWNER_ID",
+  "slack_app_id": "A_REPLACE_WITH_APP_ID",
+  "bot_user_id": "U_REPLACE_WITH_BOT_ID",
+  "workspace_domain": "your-workspace.slack.com",
+  "enabled": true,
+  "database_path": "state/local-acceptance/inbox.sqlite3",
+  "receiver_service": "com.example.director.work",
+  "manager_name": "Director",
+  "canvas_notes_header": "Owner notes",
+  "dispatcher": {
+    "enabled": true,
+    "runtime": "acp",
+    "max_workers": 2,
+    "timeout_seconds": 900,
+    "model": "gpt-6-astra",
+    "acp": {
+      "command": ["/absolute/path/to/node", "/absolute/path/to/Director/node_modules/@agentclientprotocol/codex-acp/dist/index.js"],
+      "profile": "codex-default",
+      "backend": "codex-acp",
+      "model": "gpt-6-astra",
+      "initial_agent_mode": "agent",
+      "reasoning_effort": "medium",
+      "prepare_timeout_seconds": 90,
+      "required_capabilities": ["load"],
+      "migrate_legacy_sessions": true
+    },
+    "model_selection": {"enabled": true, "default_backend": "codex", "timeout_seconds": 40}
+  },
+  "conversation_feed": {"enabled": true, "channel_id": "C_REPLACE_WITH_PRIVATE_FEED_CHANNEL_ID"}
+}

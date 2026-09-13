@@ -1,0 +1,53 @@
+{
+  "team_id": "T0000000009",
+  "channel_id": "C0000000004",
+  "channel_name": "director-tests",
+  "environment": "test",
+  "owner_user_id": "U0000000010",
+  "slack_app_id": "A0000000001",
+  "bot_user_id": "U0000000011",
+  "workspace_domain": "example.slack.com",
+  "enabled": false,
+  "database_path": "state/testing/inbox.sqlite3",
+  "dispatcher": {
+    "enabled": true,
+    "codex_path": "state/codex-runtime/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex",
+    "model": "gpt-6-astra",
+    "max_workers": 2,
+    "timeout_seconds": 900,
+    "runtime": "acp",
+    "acp": {
+      "command": [
+        "/opt/homebrew/bin/node",
+        "/Users/example/Code/Director/node_modules/@agentclientprotocol/codex-acp/dist/index.js"
+      ],
+      "profile": "codex-default",
+      "backend": "codex-acp",
+      "model": "gpt-6-astra",
+      "initial_agent_mode": "agent",
+      "reasoning_effort": "medium",
+      "prepare_timeout_seconds": 90,
+      "required_capabilities": [
+        "load"
+      ],
+      "migrate_legacy_sessions": true
+    },
+    "model_selection": {
+      "enabled": true,
+      "default_backend": "codex",
+      "timeout_seconds": 40
+    },
+    "claude": {
+      "command": [
+        "/Users/example/.local/bin/claude"
+      ],
+      "profile": "claude-default",
+      "timeout_seconds": 300
+    }
+  },
+  "conversation_feed": {
+    "enabled": true,
+    "channel_id": "C0000000007"
+  },
+  "_example_only": "Synthetic legacy regression fixture. Create a host-local config using docs/machine-setup.md."
+}
