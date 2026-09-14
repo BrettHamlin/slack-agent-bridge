@@ -26,6 +26,7 @@ CI checks these fields for director/, tests/, scripts/, acceptance/, AGENTS.md a
 | Responsibilities/publication gates | A02–A07, A16, A17 |
 | Slack card layout/actions/repair | A02–A08, A16 |
 | Conversation feed identity, publication, removal and recovery | A26–A28, A30, A01, A03, A09, A20 |
+| Needs you App Home, owner-review state or action links | A33, A01, A03, A16, A25 |
 | Reminders | A14, A19 |
 | Manager prompt/operating agreement | A01, A02, A06, A07, A09, A14 |
 | Outbox/service queue/agent publication tools | A09–A11, A13, A16, A18, A19, A25 |

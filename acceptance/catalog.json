@@ -287,6 +287,14 @@
       "mode": "controlled",
       "tier": "full",
       "dependencies": []
+    },
+    {
+      "id": "A33",
+      "title": "Needs you keeps owner review separate from completed work",
+      "file": "scenarios/A33-needs-you-home.md",
+      "mode": "controlled",
+      "tier": "full",
+      "dependencies": ["A25"]
     }
   ]
 }

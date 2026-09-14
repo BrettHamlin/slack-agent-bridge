@@ -32,6 +32,12 @@ PUBLISH_REPLY_SCHEMA = {
         "conversation_title": {"type": ["string", "null"]},
         "conversation_emoji": {"type": ["string", "null"]},
         "conversation_preview": {"type": ["string", "null"]},
+        "needs_owner_action": {
+            "type": ["object", "null"],
+            "properties": {"title": {"type": "string", "maxLength": 75}, "detail": {"type": "string", "maxLength": 300}},
+            "required": ["title", "detail"],
+            "additionalProperties": False,
+        },
     },
     "required": ["text", "authority"],
     "additionalProperties": False,
@@ -57,6 +63,7 @@ def publish_reply_result(
     conversation_title: object = None,
     conversation_emoji: object = None,
     conversation_preview: object = None,
+    needs_owner_action: object = None,
 ) -> dict[str, object]:
     """Submit one bounded receiver command; the dispatcher owns authority checks."""
     if not isinstance(authority, str) or not authority or len(authority) > 256:
@@ -69,6 +76,14 @@ def publish_reply_result(
         not isinstance(responsibility_id, str) or not isinstance(execution_fence, str)
     ):
         return {"published": False, "state": "responsibility_binding_invalid"}
+    if needs_owner_action is None:
+        owner_action_title = owner_action_detail = None
+    elif (isinstance(needs_owner_action, dict) and set(needs_owner_action) == {"title", "detail"}
+          and isinstance(needs_owner_action["title"], str) and isinstance(needs_owner_action["detail"], str)):
+        owner_action_title = needs_owner_action["title"]
+        owner_action_detail = needs_owner_action["detail"]
+    else:
+        return {"published": False, "state": "needs_owner_action_invalid"}
     try:
         result = submit_command(
             path,
@@ -81,6 +96,8 @@ def publish_reply_result(
                 conversation_title=conversation_title,
                 conversation_emoji=conversation_emoji,
                 conversation_preview=conversation_preview,
+                owner_action_title=owner_action_title,
+                owner_action_detail=owner_action_detail,
             ),
             config,
             timeout=30,
@@ -129,6 +146,7 @@ def build_server(config_path: Path) -> Server:
                 arguments.get("conversation_title"),
                 arguments.get("conversation_emoji"),
                 arguments.get("conversation_preview"),
+                arguments.get("needs_owner_action"),
             )
         )
 

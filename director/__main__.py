@@ -23,6 +23,8 @@ def load_config(path):
         raise ValueError('database_path is required')
     from .conversation_feed import feed_target
     feed_target(config)
+    from .needs_you import needs_you_target
+    needs_you_target(config)
     config['_config_path'] = str(path.resolve())
     return config
 

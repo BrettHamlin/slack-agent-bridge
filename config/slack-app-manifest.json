@@ -5,6 +5,11 @@
     "background_color": "#243447"
   },
   "features": {
+    "app_home": {
+      "home_tab_enabled": true,
+      "messages_tab_enabled": false,
+      "messages_tab_read_only_enabled": true
+    },
     "bot_user": {
       "display_name": "Director",
       "always_online": false
@@ -28,7 +33,8 @@
     },
     "event_subscriptions": {
       "bot_events": [
-        "message.groups"
+        "message.groups",
+        "app_home_opened"
       ]
     },
     "org_deploy_enabled": false,

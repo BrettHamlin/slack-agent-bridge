@@ -42,7 +42,11 @@ They are not installation templates or usable Slack destinations.
 The Socket Mode receiver saves incoming messages before acknowledging them.
 A dispatcher runs an agent only when a conversation or responsibility needs work.
 Director owns routing, durable state, delivery receipts, recovery, and Slack card
-actions; the selected agent harness owns task execution.
+actions; the selected agent harness owns task execution. Its private App Home
+also has a **Needs you** list for delivered results that still need the owner's
+review. It is separate from assigned work: an item appears only when the agent
+explicitly says the result needs owner action, and a completed end-to-end
+request such as an authorized message already sent does not appear there.
 
 - [Machine setup and upgrades](docs/machine-setup.md)
 - [Operating agreement](docs/operating-agreement.md)
