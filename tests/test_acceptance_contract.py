@@ -13,7 +13,7 @@ from scripts.acceptance import (LIVE_PROFILES, ROOT, TEST_CONFIG, TEST_TEAM, TES
 class AcceptanceContractTests(unittest.TestCase):
     def test_catalog_and_smoke_dependency_closure(self):
         rows = read_catalog()
-        self.assertEqual(len(rows), 32)
+        self.assertEqual(len(rows), 33)
         smoke = selected(rows, "smoke")
         self.assertTrue({"A01", "A02", "A03", "A05", "A09"} <= {r["id"] for r in smoke})
         self.assertTrue(all(set(r["dependencies"]) <= {s["id"] for s in smoke} for r in smoke))

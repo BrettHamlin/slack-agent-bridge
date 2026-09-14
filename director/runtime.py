@@ -16,6 +16,7 @@ from .slack_transport import SlackAllowlist
 
 CREDENTIAL_TIMEOUT_SECONDS = 30
 CREDENTIAL_NAMES = ("SLACK_BOT_TOKEN", "SLACK_APP_TOKEN")
+NEEDS_YOU_OAUTH_NAMES = ("SLACK_OPENID_CLIENT_ID", "SLACK_OPENID_CLIENT_SECRET")
 RUNTIME_ENV_FILE = ".env.runtime"
 
 
@@ -94,6 +95,31 @@ def credentials(project):
     finally:
         if fd is not None:
             os.close(fd)
+
+
+def needs_you_oauth_credentials(project):
+    """Read the optional owner-only Sign in with Slack client pair."""
+    from dotenv import dotenv_values
+    if any(name in os.environ for name in NEEDS_YOU_OAUTH_NAMES):
+        values = os.environ
+    else:
+        try:
+            fd = os.open(Path(project) / RUNTIME_ENV_FILE, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        except OSError:
+            raise CredentialUnavailable('Needs-you Sign in with Slack credentials unavailable') from None
+        try:
+            metadata = os.fstat(fd)
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid() or stat.S_IMODE(metadata.st_mode) != 0o600:
+                raise CredentialUnavailable('Runtime environment must be an owner-only regular file')
+            with os.fdopen(fd, 'r') as stream:
+                fd = None
+                values = dotenv_values(stream=stream, interpolate=False)
+        finally:
+            if fd is not None:
+                os.close(fd)
+    if any(not isinstance(values.get(name), str) or not values[name].strip() for name in NEEDS_YOU_OAUTH_NAMES):
+        raise CredentialUnavailable('Needs-you Sign in with Slack credentials unavailable')
+    return {name: values[name] for name in NEEDS_YOU_OAUTH_NAMES}
 
 
 def provision_runtime_environment(project, config):

@@ -39,8 +39,22 @@ class DispatchPreparation:
         return self.gateway.driver
 
 
+def _validate_owner_action(value):
+    """Validate optional owner-review metadata without turning it into work."""
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) != {'title', 'detail'}:
+        return None
+    title, detail = value['title'], value['detail']
+    if (not isinstance(title, str) or not title.strip() or len(title) > 75
+            or not isinstance(detail, str) or len(detail) > 300
+            or '\n' in title or '\n' in detail):
+        return None
+    return title, detail
+
+
 class Dispatcher:
-    def __init__(self, project, config, inbox, service, *, feed=None, feed_wake=None):
+    def __init__(self, project, config, inbox, service, *, feed=None, feed_wake=None, needs_you=None, needs_you_wake=None):
         self.project = Path(project)
         self.config = config
         self.options = config.get('dispatcher', {})
@@ -49,6 +63,9 @@ class Dispatcher:
         self.feed = feed
         self.feed_wake = feed_wake
         self.feed_error = ''
+        self.needs_you = needs_you
+        self.needs_you_wake = needs_you_wake
+        self.needs_you_error = ''
         self.state_directory = (self.project / config['database_path']).resolve().parent
         self.directory = self.state_directory / 'dispatch'
         self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -75,6 +92,7 @@ class Dispatcher:
                 responsibility_id TEXT, execution_fence TEXT,
                 session_id TEXT, generation INTEGER, turn_id TEXT,
                 text_digest TEXT, conversation_title TEXT, conversation_emoji TEXT, conversation_preview TEXT,
+                owner_action_title TEXT, owner_action_detail TEXT,
                 state TEXT NOT NULL, created_at REAL NOT NULL, published_at REAL);
             CREATE TABLE IF NOT EXISTS guardian_reply_approvals (
                 approval_id TEXT PRIMARY KEY, job_key TEXT NOT NULL UNIQUE,
@@ -103,7 +121,7 @@ class Dispatcher:
         authority_columns = {row[1] for row in self.db.execute('PRAGMA table_info(agent_reply_authorities)')}
         if 'text_digest' not in authority_columns:
             self.db.execute('ALTER TABLE agent_reply_authorities ADD COLUMN text_digest TEXT')
-        for name in ('conversation_title', 'conversation_emoji', 'conversation_preview'):
+        for name in ('conversation_title', 'conversation_emoji', 'conversation_preview', 'owner_action_title', 'owner_action_detail'):
             if name not in authority_columns:
                 self.db.execute(f'ALTER TABLE agent_reply_authorities ADD COLUMN {name} TEXT')
         approval_columns = {row[1] for row in self.db.execute('PRAGMA table_info(guardian_reply_approvals)')}
@@ -974,7 +992,8 @@ class Dispatcher:
             self.db.execute("UPDATE agent_reply_authorities SET state='closed' WHERE job_key=? AND state='preparing'", (key,))
 
     def publish_agent_reply(self, authority, text, responsibility_id=None, execution_fence=None,
-                            conversation_title=None, conversation_emoji=None, conversation_preview=None):
+                            conversation_title=None, conversation_emoji=None, conversation_preview=None,
+                            needs_owner_action=None):
         """Receiver-side sole publishing gate for one ACP tool invocation."""
         if not isinstance(authority, str) or not isinstance(text, str) or not text:
             return {'published': False, 'state': 'invalid_request'}
@@ -988,6 +1007,10 @@ class Dispatcher:
                 responsibility_id != row['responsibility_id'] or execution_fence != row['execution_fence']
             ):
                 return {'published': False, 'state': 'responsibility_binding_invalid'}
+        owner_action = _validate_owner_action(needs_owner_action)
+        if needs_owner_action is not None and owner_action is None:
+            return {'published': False, 'state': 'needs_owner_action_invalid'}
+        owner_action_title, owner_action_detail = owner_action if owner_action is not None else (None, None)
         payload_data = {
             'text': text,
             'responsibility_id': responsibility_id,
@@ -1000,6 +1023,11 @@ class Dispatcher:
                 conversation_title=conversation_title,
                 conversation_emoji=conversation_emoji,
                 conversation_preview=conversation_preview,
+            )
+        if owner_action is not None:
+            payload_data.update(
+                owner_action_title=owner_action_title,
+                owner_action_detail=owner_action_detail,
             )
         payload = json.dumps(
             payload_data,
@@ -1016,6 +1044,8 @@ class Dispatcher:
                     row, delivery, 'dispatch-answer:' + job['key'],
                     row['conversation_title'], row['conversation_emoji'], row['conversation_preview'], fallback_text=text,
                 )
+                self._queue_needs_you(row, delivery, 'dispatch-answer:' + job['key'],
+                                      row['owner_action_title'], row['owner_action_detail'])
             return {'published': True, 'state': 'sent'}
         if row['state'] not in ('active', 'uncertain'):
             return {'published': False, 'state': 'authority_rejected'}
@@ -1028,9 +1058,11 @@ class Dispatcher:
             with self.db:
                 self.db.execute(
                     '''UPDATE agent_reply_authorities
-                       SET text_digest=?, conversation_title=?, conversation_emoji=?, conversation_preview=?
+                       SET text_digest=?, conversation_title=?, conversation_emoji=?, conversation_preview=?,
+                           owner_action_title=?, owner_action_detail=?
                        WHERE authority=? AND text_digest IS NULL''',
-                    (digest, conversation_title, conversation_emoji, conversation_preview, authority),
+                    (digest, conversation_title, conversation_emoji, conversation_preview,
+                     owner_action_title, owner_action_detail, authority),
                 )
             row = self.db.execute('SELECT * FROM agent_reply_authorities WHERE authority=?', (authority,)).fetchone()
         key = 'dispatch-answer:' + job['key']
@@ -1094,6 +1126,7 @@ class Dispatcher:
                     self.db.execute("UPDATE agent_reply_authorities SET state='published',published_at=? WHERE authority=?",
                                     (time.time(), authority))
                 self._queue_conversation_feed(row, delivery, key, conversation_title, conversation_emoji, conversation_preview, fallback_text=text)
+                self._queue_needs_you(row, delivery, key, owner_action_title, owner_action_detail)
                 return {'published': bool(completed), 'state': 'sent' if completed else 'source_changed_after_send'}
             if row['state'] == 'uncertain':
                 delivery = self.service.reconcile_outgoing(key)
@@ -1104,6 +1137,7 @@ class Dispatcher:
                     self.db.execute("UPDATE agent_reply_authorities SET state='published',published_at=? WHERE authority=?",
                                     (time.time(), authority))
                 self._queue_conversation_feed(row, delivery, key, conversation_title, conversation_emoji, conversation_preview, fallback_text=text)
+                self._queue_needs_you(row, delivery, key, owner_action_title, owner_action_detail)
                 return {'published': bool(completed), 'state': 'sent' if completed else 'source_changed_after_send'}
             if not source_authorized():
                 return {'published': False, 'state': 'source_stale'}
@@ -1125,6 +1159,7 @@ class Dispatcher:
                 self.db.execute("UPDATE agent_reply_authorities SET state='published',published_at=? WHERE authority=?",
                                 (time.time(), authority))
             self._queue_conversation_feed(row, delivery, key, conversation_title, conversation_emoji, conversation_preview, fallback_text=text)
+            self._queue_needs_you(row, delivery, key, owner_action_title, owner_action_detail)
             return {'published': bool(completed), 'state': 'sent' if completed else 'source_changed_after_send'}
         if row['kind'] != 'work' or not row['responsibility_id'] or not row['execution_fence']:
             return {'published': False, 'state': 'authority_rejected'}
@@ -1145,6 +1180,7 @@ class Dispatcher:
             self.db.execute("UPDATE agent_reply_authorities SET state='published',published_at=? WHERE authority=?",
                             (time.time(), authority))
         self._queue_conversation_feed(row, delivery, key, conversation_title, conversation_emoji, conversation_preview, fallback_text=text)
+        self._queue_needs_you(row, delivery, key, owner_action_title, owner_action_detail)
         return {'published': True, 'state': 'sent'}
 
     def _queue_conversation_feed(self, authority, delivery, outgoing_key, title, emoji, preview, *, fallback_text=None):
@@ -1178,6 +1214,55 @@ class Dispatcher:
             # The Slack answer and its delivery receipt are already settled.
             # A feed problem is visible to maintenance but cannot delay either.
             self.feed_error = type(error).__name__
+
+    def _queue_needs_you(self, authority, delivery, outgoing_key, title, detail):
+        """Record an explicit post-delivery owner review without touching work state."""
+        if self.needs_you is None or not getattr(self.needs_you, 'configured', False):
+            return
+        if not isinstance(title, str) or not isinstance(detail, str):
+            return
+        root = authority['root']
+        if root == 'responsibilities' or not delivery.slack_ts:
+            return
+        try:
+            root_text = str(root)
+            conversation_url = (
+                f"https://{self.config['workspace_domain']}/archives/{self.config['channel_id']}"
+                f"/p{root_text.replace('.', '')}?thread_ts={root_text}&cid={self.config['channel_id']}"
+            )
+            self.needs_you.store.record_completed_result(
+                idempotency_key=outgoing_key, root=root_text, conversation_url=conversation_url,
+                title=title, detail=detail,
+            )
+            self.needs_you_error = ''
+            if self.needs_you_wake is not None:
+                self.needs_you.request_publish()
+                self.needs_you_wake()
+        except Exception as error:
+            # Original delivery and its completion receipt are already settled.
+            # Recovery retries the local projection from published authorities.
+            self.needs_you_error = type(error).__name__
+
+    def recover_needs_you(self):
+        """Recreate a missing owner-review projection after a post-send crash."""
+        if self.needs_you is None or not getattr(self.needs_you, 'configured', False):
+            return 0
+        rows = self.db.execute(
+            """SELECT a.*,j.root,j.key FROM agent_reply_authorities AS a
+               JOIN jobs AS j ON j.key=a.job_key
+               WHERE a.state='published' AND a.owner_action_title IS NOT NULL
+                 AND a.owner_action_detail IS NOT NULL"""
+        ).fetchall()
+        queued = 0
+        for row in rows:
+            if row['root'] == 'responsibilities':
+                continue
+            key = 'dispatch-answer:' + row['key']
+            delivery = self.service.reconcile_outgoing(key)
+            if delivery.state == 'sent' and delivery.slack_ts:
+                self._queue_needs_you(row, delivery, key, row['owner_action_title'], row['owner_action_detail'])
+                queued += 1
+        return queued
 
     def recover_conversation_feed(self):
         """Requeue already-confirmed replies after a crash between delivery and feed staging."""
@@ -1565,6 +1650,9 @@ Keep simple answers simple: do not load unrelated history, run broad research, o
         feed_instruction = ''
         if self.feed is not None and getattr(self.feed, 'configured', False):
             feed_instruction = '''\nThe separate conversation feed is enabled. With this same publish_reply call, always supply a concise model-authored `conversation_preview`, a stable meaningful `conversation_title`, and a topic-related `conversation_emoji`. The receiver records title and emoji only for the first feed entry in a Slack root, so an existing session retains its original identity. These fields are a navigation aid, never status boilerplate.\n'''
+        needs_you_instruction = ''
+        if self.needs_you is not None and getattr(self.needs_you, 'configured', False):
+            needs_you_instruction = '''\nThe private Needs you list is enabled. Supply `needs_owner_action` in the same publish_reply call only when this successfully delivered result leaves a specific meaningful action for the owner, such as reviewing a prepared document or edits. Its title is one line and at most 75 characters; detail is one line and at most 300 characters. Do not create one for a question, an ordinary answer, or an end-to-end request you have already completed, such as an authorized message you sent. This review item is not a responsibility and never authorizes further execution.\n'''
         return f'''You are {manager_name.strip()}'s active manager, invoked because real work arrived. Use the configured model and reasoning effort for the request. Work in {self.project}.
 {target}
 Environment binding: channel {self.config.get('channel_id', 'configured channel')}; config {self.config.get('_config_path', 'config/director.json')}; state directory {self.state_directory}. DIRECTOR_CONFIG is already set for every CLI subprocess: preserve it, never use another config or production state. Save answer files and shared preferences only under this state directory. For test-channel work, do not read real-channel context or create real-world assignments.
@@ -1578,7 +1666,7 @@ Prepared task/card guide:
 {task_guide}
 {guide_note}
 The prepared execution fence is authoritative for this turn.
-Call the `publish_reply` MCP tool exactly once for this turn with the reply text and this opaque authority: {authority}. The receiver validates its current source revision or claimed responsibility fence, sends through the stable outbox key {key}, reconciles uncertainty without replay, and records completion only after confirmed delivery. Never use answer files, `director send`, manual source completion, or generic Slack publishing for this result. For a source-turn responsibility continuation, provide both `responsibility_id` and `execution_fence` from the prepared guide; it cannot bypass its execution fence. Keep simple answers simple, preserve the current thread context, and never fabricate permissions, receipts, evidence, or completion.{feed_instruction}'''
+Call the `publish_reply` MCP tool exactly once for this turn with the reply text and this opaque authority: {authority}. The receiver validates its current source revision or claimed responsibility fence, sends through the stable outbox key {key}, reconciles uncertainty without replay, and records completion only after confirmed delivery. Never use answer files, `director send`, manual source completion, or generic Slack publishing for this result. For a source-turn responsibility continuation, provide both `responsibility_id` and `execution_fence` from the prepared guide; it cannot bypass its execution fence. Keep simple answers simple, preserve the current thread context, and never fabricate permissions, receipts, evidence, or completion.{feed_instruction}{needs_you_instruction}'''
 
     def _launch(self, job, now):
         if self.db.execute("SELECT 1 FROM jobs WHERE root=? AND state IN ('running','blocked','preparing')", (job['root'],)).fetchone():

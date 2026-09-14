@@ -18,7 +18,8 @@ COMMANDS = frozenset(('source', 'read', 'send', 'reconcile', 'recover',
     'dispatch-reconcile', 'guardian-pending', 'guardian-approve', 'agent-publish', 'conversation-feed-import', 'conversation-feed-hide'))
 FIELDS = frozenset(('command', 'message_id', 'revision', 'key', 'thread_ts', 'title',
     'conversation_url', 'responsibility_id', 'fence', 'due_at', 'payload_text',
-    'retry_if_stopped', 'authority', 'conversation_title', 'conversation_emoji', 'conversation_preview', 'feed_root'))
+    'retry_if_stopped', 'authority', 'conversation_title', 'conversation_emoji', 'conversation_preview',
+    'owner_action_title', 'owner_action_detail', 'feed_root'))
 IDENTITY = ('team_id', 'channel_id', 'owner_user_id', 'bot_user_id', 'workspace_domain')
 MAX_PAYLOAD = 1024 * 1024
 MAX_DISPATCH_KEY_LENGTH = 256
@@ -69,7 +70,13 @@ def validate(payload, config):
             raise ValueError('agent-publish requires bounded authority and text')
         if (args.get('responsibility_id') is None) != (args.get('fence') is None):
             raise ValueError('agent-publish responsibility binding is incomplete')
-    elif any(args.get(name) is not None for name in ('conversation_title', 'conversation_emoji', 'conversation_preview')):
+        if (args.get('owner_action_title') is None) != (args.get('owner_action_detail') is None):
+            raise ValueError('agent-publish owner action is incomplete')
+        if args.get('owner_action_title') is not None and (
+                not isinstance(args.get('owner_action_title'), str) or not isinstance(args.get('owner_action_detail'), str)
+                or len(args['owner_action_title']) > 75 or len(args['owner_action_detail']) > 300):
+            raise ValueError('agent-publish owner action is invalid')
+    elif any(args.get(name) is not None for name in ('conversation_title', 'conversation_emoji', 'conversation_preview', 'owner_action_title', 'owner_action_detail')):
         raise ValueError('conversation metadata is only valid for agent-publish')
     elif args.get('authority') is not None:
         raise ValueError('authority is only valid for agent-publish')

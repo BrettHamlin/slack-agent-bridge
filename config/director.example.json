@@ -31,5 +31,11 @@
     },
     "model_selection": {"enabled": true, "default_backend": "codex", "timeout_seconds": 40}
   },
-  "conversation_feed": {"enabled": true, "channel_id": "C_REPLACE_WITH_PRIVATE_FEED_CHANNEL_ID"}
+  "conversation_feed": {"enabled": true, "channel_id": "C_REPLACE_WITH_PRIVATE_FEED_CHANNEL_ID"},
+  "needs_you": {
+    "enabled": true,
+    "action_url": "https://bridge.example.com",
+    "http_bind_host": "127.0.0.1",
+    "http_port": 8080
+  }
 }

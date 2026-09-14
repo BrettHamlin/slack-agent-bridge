@@ -9,13 +9,14 @@ import time
 
 from .inbox import InboxStore
 from .receipt_ack import ReceiptAckWorker
-from .runtime import credentials, database_path, quiet_sdk, singleton, verify_identity, verify_conversation_feed_identity
+from .runtime import credentials, database_path, needs_you_oauth_credentials, quiet_sdk, singleton, verify_identity, verify_conversation_feed_identity
 from .slack_service import SlackService
 from .slack_transport import SlackAllowlist, create_socket_mode_client, make_socket_mode_listener, _socket_mode_response
 
 
 def channel_configs(primary, project, load):
     from .conversation_feed import feed_target
+    from .needs_you import needs_you_target
     configs = [primary]
     for name in primary.get('additional_configs', []):
         path = (project / name).resolve()
@@ -46,12 +47,17 @@ def channel_configs(primary, project, load):
             if target.channel_id in channels or target.channel_id in feed_channels:
                 raise ValueError('Conversation feed channels must be distinct from every source and feed channel')
             feed_channels.add(target.channel_id)
+        # App Home is one private surface per Slack app/team/owner.  Test
+        # channels share the primary identity, so a second enabled projection
+        # would expose the wrong local state to the owner.
+        if config is not primary and needs_you_target(config) is not None:
+            raise ValueError('Needs-you App Home must be configured only on the primary channel')
     if channels & feed_channels:
         raise ValueError('Conversation feed channels must be distinct from every source channel')
     return configs
 
 
-def routed_listener(routes, response_factory=_socket_mode_response):
+def routed_listener(routes, response_factory=_socket_mode_response, *, home_routes=None):
     """Select exactly one listener before acknowledging an envelope."""
     def listener(client, request):
         payload = getattr(request, 'payload', None)
@@ -61,9 +67,24 @@ def routed_listener(routes, response_factory=_socket_mode_response):
             event = payload.get('event')
             if not isinstance(event, dict):
                 event = {}
+            if event.get('type') == 'app_home_opened':
+                selected = (home_routes or {}).get((payload.get('team_id'), event.get('user')))
+                if selected:
+                    selected(client, request)
+                elif getattr(request, 'envelope_id', None):
+                    client.send_socket_mode_response(response_factory(request.envelope_id))
+                return
             key = (payload.get('team_id'), event.get('channel'))
         elif getattr(request, 'type', None) == 'interactive':
             team, channel = payload.get('team'), payload.get('channel')
+            view, user = payload.get('view'), payload.get('user')
+            if isinstance(view, dict) and isinstance(user, dict):
+                selected = (home_routes or {}).get((team.get('id') if isinstance(team, dict) else None, user.get('id')))
+                if selected:
+                    selected(client, request)
+                elif getattr(request, 'envelope_id', None):
+                    client.send_socket_mode_response(response_factory(request.envelope_id))
+                return
             key = (team.get('id') if isinstance(team, dict) else None,
                    channel.get('id') if isinstance(channel, dict) else None)
         else:
@@ -125,9 +146,32 @@ def make_feed_listener(handler, response_factory=_socket_mode_response):
     return listener
 
 
+def make_needs_you_listener(home, wake, response_factory=_socket_mode_response):
+    """Acknowledge and durably handle only this owner's App Home callbacks."""
+    def listener(client, request):
+        payload = getattr(request, 'payload', None)
+        try:
+            if getattr(request, 'type', None) == 'events_api':
+                if home.queue_open(payload):
+                    wake()
+            elif getattr(request, 'type', None) == 'interactive':
+                home.handle_interaction(payload)
+                wake()
+            else:
+                return
+            if getattr(request, 'envelope_id', None):
+                client.send_socket_mode_response(response_factory(request.envelope_id))
+        except Exception:
+            # A durable interaction must be retried if its state transition
+            # could not be recorded.  Do not include Slack payloads in logs.
+            return
+    return listener
+
+
 class ChannelLoop:
     def __init__(self, config, project, path, store, service, execute, *, feed_available=True):
         from .conversation_feed import ConversationFeed, ConversationFeedWorker
+        from .needs_you import NeedsYouHome, NeedsYouHomeWorker
         from .service_queue import ServiceQueue
         from .dispatcher import Dispatcher
         self.config, self.project, self.path = config, project, path
@@ -141,11 +185,28 @@ class ChannelLoop:
             self.feed, lambda value: self.store.set_checkpoint('receiver.conversation_feed_error', value)
         )
         self.feed_worker.start()
+        self.needs_you = NeedsYouHome(service._web_client, path, config)
+        self.needs_you_worker = NeedsYouHomeWorker(
+            self.needs_you, lambda value: self.store.set_checkpoint('receiver.needs_you_home_error', value)
+        )
+        self.needs_you_worker.start()
+        self.needs_you_http = None
+        if self.needs_you.target is not None and self.needs_you.target.action_url is not None:
+            from .needs_you_http import NeedsYouActionServer
+            oauth = needs_you_oauth_credentials(project)
+            self.needs_you_http = NeedsYouActionServer(
+                self.needs_you, service._web_client,
+                client_id=oauth['SLACK_OPENID_CLIENT_ID'], client_secret=oauth['SLACK_OPENID_CLIENT_SECRET'],
+                wake=self.needs_you_worker.wake,
+            )
+            self.needs_you_http.start()
         self.dispatcher = Dispatcher(
-            project, config, store, service, feed=self.feed, feed_wake=self.feed_worker.wake
+            project, config, store, service, feed=self.feed, feed_wake=self.feed_worker.wake,
+            needs_you=self.needs_you, needs_you_wake=self.needs_you_worker.wake,
         ) if config.get('dispatcher', {}).get('enabled') else None
         if self.dispatcher is not None:
             self.dispatcher.recover_conversation_feed()
+            self.dispatcher.recover_needs_you()
         self.feed_approval_requests = queue.SimpleQueue()
         self.feed_interactions = FeedApprovalInteraction(config, self.feed, self.feed_approval_requests)
         self.next_maintenance = self.next_recovery = 0
@@ -168,10 +229,16 @@ class ChannelLoop:
         if args.command == 'agent-publish':
             if self.dispatcher is None:
                 raise RuntimeError('Dispatcher unavailable')
-            return self.dispatcher.publish_agent_reply(
+            publish_args = (
                 args.authority, args.payload_text, args.responsibility_id, args.fence,
                 getattr(args, 'conversation_title', None), getattr(args, 'conversation_emoji', None),
                 getattr(args, 'conversation_preview', None),
+            )
+            if getattr(args, 'owner_action_title', None) is None:
+                return self.dispatcher.publish_agent_reply(*publish_args)
+            return self.dispatcher.publish_agent_reply(
+                *publish_args,
+                needs_owner_action={'title': args.owner_action_title, 'detail': args.owner_action_detail},
             )
         if args.command == 'conversation-feed-import':
             if not args.payload_text:
@@ -196,6 +263,7 @@ class ChannelLoop:
                 self.dispatcher.tick()
                 self.store.set_checkpoint('dispatcher.error', '')
                 self.store.set_checkpoint('receiver.conversation_feed_queue_error', self.dispatcher.feed_error)
+                self.store.set_checkpoint('receiver.needs_you_queue_error', self.dispatcher.needs_you_error)
             except Exception as error:
                 self.store.set_checkpoint('dispatcher.error', type(error).__name__)
         if time.time() < self.next_maintenance:
@@ -210,6 +278,7 @@ class ChannelLoop:
             ('receiver.card_presence_error', self.service.ensure_waiting_attention_cards),
             ('receiver.card_render_error', self.service.reconcile_pending_inbox_card_renders),
             ('receiver.card_nudge_error', self.service.deliver_pending_inbox_card_nudges),
+            ('receiver.needs_you_resurface_error', self._resurface_needs_you),
         ):
             try:
                 operation()
@@ -269,8 +338,16 @@ class ChannelLoop:
             self.dispatcher.close()
         self.feed_worker.close()
         self.feed.close()
+        if self.needs_you_http is not None:
+            self.needs_you_http.close()
+        self.needs_you_worker.close()
+        self.needs_you.close()
         self.queue.close()
         self.store.set_checkpoint('receiver.stopped', str(time.time()))
+
+    def _resurface_needs_you(self):
+        if self.needs_you.resurface_due():
+            self.needs_you_worker.wake()
 
 
 def listen_channels(primary, project, load, execute):
@@ -291,7 +368,7 @@ def listen_channels(primary, project, load, execute):
         allow = SlackAllowlist(primary['team_id'], primary['channel_id'], primary['owner_user_id'], primary['workspace_domain'])
         client = create_socket_mode_client(values['SLACK_APP_TOKEN'], values['SLACK_BOT_TOKEN'], store, allow)
         stack.callback(client.close)
-        routes, loops, receipt_workers = {}, [], []
+        routes, home_routes, loops, receipt_workers = {}, {}, [], []
         for index, config in enumerate(configs):
             try:
                 verify_identity(client.web_client, config)
@@ -335,7 +412,12 @@ def listen_channels(primary, project, load, execute):
             loops.append(loop)
             if loop.feed.target is not None:
                 routes[(config['team_id'], loop.feed.target.channel_id)] = make_feed_listener(loop.feed_interactions)
-        client.socket_mode_request_listeners[:] = [routed_listener(routes)]
+            if loop.needs_you.target is not None:
+                home_key = (loop.needs_you.target.team_id, loop.needs_you.target.owner_user_id)
+                if home_key in home_routes:
+                    raise RuntimeError('Needs-you App Home route is ambiguous')
+                home_routes[home_key] = make_needs_you_listener(loop.needs_you, loop.needs_you_worker.wake)
+        client.socket_mode_request_listeners[:] = [routed_listener(routes, home_routes=home_routes)]
         client.connect()
         for receipt_worker in receipt_workers:
             receipt_worker.start()

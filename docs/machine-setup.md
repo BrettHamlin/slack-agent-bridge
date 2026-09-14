@@ -128,6 +128,20 @@ For a browser-capable Codex setup, use this order and record only opaque IDs in 
 
 Director accepts its two Slack credentials from the process environment or ignored mode-0600 `.env.runtime`. Use an approved secret connection to materialize an owner-only `.env` locally, then run `.venv/bin/python -m director --config config/director-work.local.json provision-runtime-env`; that command verifies the configured Slack identity while transferring only the two runtime variables without displaying values. For an existing installation, preserve its working provisioning; do not overwrite it. See [the credentials section of the README](../README.md#credentials-and-state).
 
+### Enable Needs you
+
+Needs you appears in the Slack app's **Home** tab; it is not a channel and requires no third channel. Keep the private source and conversation-feed channels configured above. The tracked manifest enables Home and subscribes to `app_home_opened`; interactivity and Socket Mode must remain enabled.
+
+Enable the feature in the selected host-local config. For checkbox completion and Open conversation only, use:
+
+```json
+"needs_you": {"enabled": true}
+```
+
+The example config includes an illustrative `action_url`. Remove it until the HTTPS and Sign in with Slack setup below is complete, or replace it with the verified destination origin. Missing or disabled `needs_you` leaves the feature off. Review state is created automatically in the existing configured SQLite database; no separate database or manual migration command is needed. Preserve that database across restarts. Existing conversation history is not backfilled: new confirmed replies create review items only when the agent explicitly reports an owner action. Checking an item moves it to Done; unchecking it returns it to Needs you.
+
+For inline Needs you **Snooze** and **Bring back** links, set `needs_you.action_url` to a public HTTPS origin and retain the loopback `http_bind_host`/`http_port`. The existing receiver owns the action-page thread; a user-managed HTTPS reverse proxy terminates TLS and forwards only that loopback port. After the normal bot install, enable Sign in with Slack for the same app and add `https://YOUR-ORIGIN/needs-you/oauth/callback` as its redirect URL. Do not add a user `openid` scope to the bot-install manifest: Sign in with Slack requests `openid` through its separate authorize flow. Materialize `SLACK_OPENID_CLIENT_ID` and `SLACK_OPENID_CLIENT_SECRET` beside the existing runtime values through the authorized connection, mode 0600. The normal provision command deliberately transfers only the bot and Socket Mode pair, so it does not overwrite an existing runtime file to add these values. Without the proxy, redirect URL, or OpenID pair, omit `action_url`; Needs you still supports its checkbox and Open conversation link.
+
 ## 4. Verify before starting or updating the service
 
 Choose the exact config path rather than relying on defaults. Substitute a real absolute destination path here:
@@ -182,6 +196,16 @@ Before calling the installation complete, run one controlled ordinary source rep
 ## Upgrades, restart continuity, and rollback
 
 On each host, follow its maintenance procedure, pull the reviewed release, run `pip install -r requirements.txt` in its own venv and `npm ci`, rerun relevant checks, and restart its existing service deliberately. A pull does not install changed dependencies or replace already-running Python/Node processes. Do not overwrite host-local config or working login stores during an upgrade.
+
+### Upgrading an existing installation for Needs you
+
+1. Identify the existing receiver's checkout, service, config and database. Follow the host's maintenance procedure and take a consistent backup of its SQLite state before upgrading. Preserve the local config, credential source and session stores.
+2. Pull the reviewed release containing Needs you into that checkout. Install its dependencies with `.venv/bin/python -m pip install -r requirements.txt` and `npm ci --no-audit --no-fund`; this release adds the pinned JWT verification dependency. Run `.venv/bin/python -m pip check`, the relevant tests, and `.venv/bin/python scripts/acceptance.py validate`.
+3. In the **existing** Slack app, enable the Home tab and add the `app_home_opened` bot event, matching `config/slack-app-manifest.json`. Preserve its app identity, existing event subscriptions, scopes, interactivity and Socket Mode. Complete reinstall/approval if Slack prompts for it. Do not create a replacement app or new channels for this upgrade.
+4. Merge the `needs_you` settings above into the existing local config. To include inline Snooze and Bring back, complete the HTTPS proxy, redirect URL and OpenID runtime-credential setup before setting `action_url`. The receiver serves the action pages itself; the HTTPS proxy is deployment infrastructure and must also be available. A Git pull does not provision it.
+5. Restart the existing service using the host's established maintenance command. Do not launch a second receiver. Open the app's Home as the configured owner and verify it loads. Run the affected controlled acceptance scenarios, including A33, under [RUNNER.md](../acceptance/RUNNER.md): create a synthetic review item, check/uncheck it, exercise Snooze/Bring back when configured, and verify restart continuity. Record the deployed SHA and distinguish native layout preview from live action acceptance.
+
+To disable Needs you, set `needs_you.enabled` to `false` and restart the existing receiver. Retain its SQLite tables so review history is available when re-enabled; do not delete the database to disable the feature.
 
 Same-host continuity depends on retaining Director's configured SQLite/dispatch state **and** the native Codex/Claude session stores under the service account. A fresh clone has no prior conversations. Moving ownership of an existing receiver to another machine needs a separate coordinated state/native-session migration with one active receiver; do not copy credentials or reset bindings to make old threads work.
 

@@ -43,6 +43,7 @@ A04 runs before A05 in full runs so Drop cannot destroy its fixture. Dependencie
 | Session feed, stable identity, replacement, removal, recovery | A26–A28, A30 |
 | Complexity selection, harness affinity and Claude one-shot resume | A31 |
 | Portable standalone installation and controlled ownership transfer | A32 |
+| Needs you App Home, owner review and authenticated action links | A33 |
 
 ## Results
 
